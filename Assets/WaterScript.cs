@@ -6,25 +6,50 @@ public class WaterScript : MonoBehaviour
 {
     public WaterVertex[] waterVertices;
 
+
+    [Header("Travel")]
+
     public float travelDistance;
     public float travelDistanceTotal;
-    public float travelDistanceUntilNext;
-    public float travelDistanceUntilNextLast;
+    float travelDistanceUntilNext;
+    float travelDistanceUntilNextLast;
     float travelSpeed;
+    float travelSpeedTotal;
     public int travelId;
+
+    public AnimationCurve travelSpeedCurve = new AnimationCurve(new Keyframe(0, 1), new Keyframe(1, 1));
+
+
+    [Header("Interpolation")]
 
     Vector3 interpolationVertex1;
     Vector3 interpolationVertex2;
 
+
+    [Header("Mesh")]
+
     private Mesh meshWater;
     private Vector3[] meshVertices;
     private int[] meshTriangles;
-
     MeshFilter meshFilter;
+
+
+    [Header("Particles")]
+
+    public ParticleSystem particlesFoam;
+    ParticleSystem.MainModule particlesFoamMain;
+    ParticleSystem.ShapeModule particlesFoamShape;
 
 
     void Awake()
     {
+        if (particlesFoam != null)
+        {
+            particlesFoam = Instantiate(particlesFoam);
+            particlesFoamMain = particlesFoam.main;
+            particlesFoamShape = particlesFoam.shape;
+        }
+
         if (waterVertices.Length < 2) return;
 
         for (int i = 1; i < waterVertices.Length; i++)
@@ -47,7 +72,8 @@ public class WaterScript : MonoBehaviour
 
     void Update()
     {
-        travelDistance += Time.deltaTime * travelSpeed;
+        travelSpeedTotal = travelSpeed * travelSpeedCurve.Evaluate(travelDistance / travelDistanceTotal);
+        travelDistance += Time.deltaTime * travelSpeedTotal;
 
         if (travelDistance >= travelDistanceUntilNext)
         {
@@ -179,6 +205,21 @@ public class WaterScript : MonoBehaviour
         meshVertices[^1] = Vector3.Lerp(meshVertices[^3], interpolationVertex1, distance);
         meshVertices[^2] = Vector3.Lerp(meshVertices[^4], interpolationVertex2, distance);
 
+        if (particlesFoam != null)
+        {
+            Vector3 vertex1 = meshVertices[^1];
+            Vector3 vertex2 = meshVertices[^2];
+
+            Quaternion lookRotation = Quaternion.LookRotation(vertex1 - vertex2);
+            float vertexDistance = Vector2.Distance(vertex1, vertex2) / 2;
+
+            particlesFoamMain.startSize = vertexDistance * 1;
+            particlesFoamShape.radius = vertexDistance;
+            
+            particlesFoam.transform.position = (vertex1 + vertex2) / 2 + transform.position;
+            particlesFoam.transform.rotation = lookRotation;
+        }
+
         meshWater.vertices = meshVertices;
         meshFilter.mesh = meshWater;
     }
@@ -244,9 +285,16 @@ public class WaterScript : MonoBehaviour
         interpolationVertex2 = Vector3.zero;
 
         travelId = 0;
-        travelDistanceUntilNext = 0;
+        travelDistanceUntilNext = waterVertices[0].distance;
         travelDistanceUntilNextLast = 0;
-        travelSpeed = 0;
+        travelSpeed = waterVertices[0].speed;
+
+        if (waterVertices.Length < 2) return;
+
+        WaterVertex vertex = waterVertices[1];
+
+        interpolationVertex1 = vertex.transform.localPosition + vertex.transform.right * vertex.width;
+        interpolationVertex2 = vertex.transform.localPosition - vertex.transform.right * vertex.width;
     }
 
 
