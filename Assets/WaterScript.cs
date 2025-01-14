@@ -17,6 +17,9 @@ public class WaterScript : MonoBehaviour
     float travelSpeedTotal;
     public int travelId;
 
+    public float waitForTravel;
+    float waitForTravelTimer;
+
     public AnimationCurve travelSpeedCurve = new AnimationCurve(new Keyframe(0, 1), new Keyframe(1, 1));
 
 
@@ -28,8 +31,11 @@ public class WaterScript : MonoBehaviour
 
     [Header("Mesh")]
 
+    public Vector3 rotateUV;
+
     private Mesh meshWater;
     private Vector3[] meshVertices;
+    private Vector2[] meshUV;
     private int[] meshTriangles;
     MeshFilter meshFilter;
 
@@ -72,6 +78,10 @@ public class WaterScript : MonoBehaviour
 
     void Update()
     {
+        waitForTravelTimer += Time.deltaTime;
+
+        if (waitForTravelTimer < waitForTravel) return;
+
         travelSpeedTotal = travelSpeed * travelSpeedCurve.Evaluate(travelDistance / travelDistanceTotal);
         travelDistance += Time.deltaTime * travelSpeedTotal;
 
@@ -99,6 +109,7 @@ public class WaterScript : MonoBehaviour
         GetTriangles();
 
         meshWater.vertices = meshVertices;
+        meshWater.uv = meshUV;
         meshWater.triangles = meshTriangles;
 
         meshFilter.mesh = meshWater;
@@ -117,6 +128,7 @@ public class WaterScript : MonoBehaviour
         GetTriangles();
 
         meshWater.vertices = meshVertices;
+        meshWater.uv = meshUV;
         meshWater.triangles = meshTriangles;
 
         meshFilter.mesh = meshWater;
@@ -128,13 +140,17 @@ public class WaterScript : MonoBehaviour
     private void GetVertices()
     {
         meshVertices = new Vector3[waterVertices.Length * 2];
+        meshUV = new Vector2[waterVertices.Length * 2];
 
         for (int i = 0; i < waterVertices.Length; i++)
         {
             WaterVertex vertex = waterVertices[i];
 
-            meshVertices[i * 2] = vertex.transform.localPosition - vertex.transform.right * vertex.width;
-            meshVertices[i * 2 + 1] = vertex.transform.localPosition + vertex.transform.right * vertex.width;
+            meshVertices[i * 2] = vertex.transform.localPosition - CalculateWidth(vertex.transform, vertex.width);
+            meshVertices[i * 2 + 1] = vertex.transform.localPosition + CalculateWidth(vertex.transform, vertex.width);
+
+            meshUV[i * 2] = GetRotatedUV(meshVertices[i * 2]);
+            meshUV[i * 2 + 1] = GetRotatedUV(meshVertices[i * 2 + 1]);
         }
     }
     /// <summary>
@@ -147,13 +163,17 @@ public class WaterScript : MonoBehaviour
         if (length > waterVertices.Length) return;
 
         meshVertices = new Vector3[length * 2];
+        meshUV = new Vector2[length * 2];
 
         for (int i = 0; i < length; i++)
         {
             WaterVertex vertex = waterVertices[i];
 
-            meshVertices[i * 2] = vertex.transform.localPosition - vertex.transform.right * vertex.width;
-            meshVertices[i * 2 + 1] = vertex.transform.localPosition + vertex.transform.right * vertex.width;
+            meshVertices[i * 2] = vertex.transform.localPosition - CalculateWidth(vertex.transform, vertex.width);
+            meshVertices[i * 2 + 1] = vertex.transform.localPosition + CalculateWidth(vertex.transform, vertex.width);
+
+            meshUV[i * 2] = GetRotatedUV(meshVertices[i * 2]);
+            meshUV[i * 2 + 1] = GetRotatedUV(meshVertices[i * 2 + 1]);
         }
     }
 
@@ -213,14 +233,15 @@ public class WaterScript : MonoBehaviour
             Quaternion lookRotation = Quaternion.LookRotation(vertex1 - vertex2);
             float vertexDistance = Vector2.Distance(vertex1, vertex2) / 2;
 
-            particlesFoamMain.startSize = vertexDistance * 1;
+            particlesFoamMain.startSize = vertexDistance * .7f;
             particlesFoamShape.radius = vertexDistance;
             
-            particlesFoam.transform.position = (vertex1 + vertex2) / 2 + transform.position;
-            particlesFoam.transform.rotation = lookRotation;
+            particlesFoam.transform.position = transform.TransformDirection((vertex1 + vertex2) / 2) + transform.position;
+            particlesFoam.transform.rotation = lookRotation * transform.rotation;
         }
 
         meshWater.vertices = meshVertices;
+        meshWater.uv = meshUV;
         meshFilter.mesh = meshWater;
     }
 
@@ -271,7 +292,11 @@ public class WaterScript : MonoBehaviour
         interpolationVertex1 = meshVertices[^1];
         interpolationVertex2 = meshVertices[^2];
 
+        meshUV[^1] = GetRotatedUV(interpolationVertex1);
+        meshUV[^2] = GetRotatedUV(interpolationVertex2);
+
         meshWater.vertices = meshVertices;
+        meshWater.uv = meshUV;
         meshWater.triangles = meshTriangles;
 
         meshFilter.mesh = meshWater;
@@ -288,28 +313,33 @@ public class WaterScript : MonoBehaviour
         travelDistanceUntilNext = waterVertices[0].distance;
         travelDistanceUntilNextLast = 0;
         travelSpeed = waterVertices[0].speed;
+        waitForTravelTimer = 0;
 
         if (waterVertices.Length < 2) return;
 
         WaterVertex vertex = waterVertices[1];
 
-        interpolationVertex1 = vertex.transform.localPosition + vertex.transform.right * vertex.width;
-        interpolationVertex2 = vertex.transform.localPosition - vertex.transform.right * vertex.width;
+        interpolationVertex1 = vertex.transform.localPosition + CalculateWidth(vertex.transform, vertex.width);
+        interpolationVertex2 = vertex.transform.localPosition - CalculateWidth(vertex.transform, vertex.width);
     }
 
-
-    void OnValidate()
+    Vector3 CalculateWidth(Transform vertex, float width)
     {
-        if (!Application.isPlaying)
-        {
-            GetMesh();
-        }
+        return transform.InverseTransformDirection(vertex.right) * width;
+    }
+
+    Vector2 GetRotatedUV(Vector3 coordinate)
+    {
+        Vector3 rotated = Quaternion.Euler(rotateUV) * transform.InverseTransformPoint(coordinate);
+        return new Vector2(rotated.x, rotated.z);
     }
 
     void OnDrawGizmos()
     {
         if (!Application.isPlaying)
         {
+            if (waterVertices.Length < 2 || waterVertices[^1] == null) return;
+            
             GetMesh();
         }
     }
